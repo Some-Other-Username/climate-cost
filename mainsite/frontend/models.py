@@ -49,14 +49,50 @@ class EmissionType(models.Model):
         return str(self.name)
 
 
-# Every conversion we do can be restricted, for example a conversion
-# factor might only be available in the UK for the year 2001
+# Hierarchy of items, for example:
+# Pepsi Light Caffeine Free -> Pepsi Cola -> Cola -> Soft Drink -> Bottled Drink -> Consumer Good -> Object
+class ItemCategory(models.Model):
+    name = models.CharField(max_length=100)
+    # lf_stage = models.ForeignKey(LifeCycleStage, on_delete=models.CASCADE)
+    parent = models.ForeignKey('self', blank=True, null=True, on_delete=models.CASCADE)
+
+    def __str__(self):
+        return str(self.name)
+
+
+class LifeCycleStage(models.Model):
+    name = models.CharField(max_length=100)
+    parent = models.ForeignKey('self', blank=True, null=True, on_delete=models.CASCADE)
+
+    def __str__(self):
+        return str(self.name)
+
+
+# Every emission (conversion) can be restricted, for example an emission might only be valid for
+# T-Shirts available in the UK for the year 2001
 class Restriction(models.Model):
     # Null means no restriction
-    restrictRegion = models.ForeignKey(Region, blank=True, null=True, on_delete=models.CASCADE)
-    restrictionStart = models.DateField(blank=True, null=True, default=None)
-    restrictionEnd = models.DateField(blank=True, null=True, default=None)
-    reference = models.ForeignKey(Reference, blank=True, null=True, on_delete=models.SET_NULL)
+    item_category = models.ForeignKey(ItemCategory, blank=True, null=True, on_delete=models.CASCADE, default=None)
+    lf_stage = models.ForeignKey(LifeCycleStage, blank=True, null=True, on_delete=models.CASCADE, default=None)
+    region = models.ForeignKey(Region, blank=True, null=True, on_delete=models.CASCADE, default=None)
+    start_date = models.DateField(blank=True, null=True, default=None)
+    end_date = models.DateField(blank=True, null=True, default=None)
+
+    def __str__(self):
+        result = "Restriction"
+        if self.item_category is not None:
+            result += " item:" + str(self.item_category)
+        if self.lf_stage is not None:
+            result += " stage:" + str(self.lf_stage)
+        if self.region is not None:
+            result += " region:" + str(self.region)
+        if self.start_date is not None:
+            result += " start:" + str(self.start_date)
+        if self.end_date is not None:
+            result += " end:" + str(self.end_date)
+        if result == "Restriction":
+            result = "No Restriction"
+        return result
 
 
 # A conversion from one emission type to another (such as CO2e)
@@ -73,35 +109,27 @@ class EmissionConversion(models.Model):
         return str(self.from_e_type) + "-->" + str(self.to_e_type)
 
 
-class LifeCycleStage(models.Model):
-    name = models.CharField(max_length=100)
-    parent = models.ForeignKey('self', blank=True, null=True, on_delete=models.CASCADE)
-
-    def __str__(self):
-        return str(self.name)
-
-
-# Hierarchy of items, for example:
-# Pepsi Light Caffeine Free -> Pepsi Cola -> Cola -> Soft Drink -> Bottled Drink -> Consumer Good -> Object
-class ItemCategory(models.Model):
-    name = models.CharField(max_length=100)
-    lf_stage = models.ForeignKey(LifeCycleStage, on_delete=models.CASCADE)
-    parent = models.ForeignKey('self', blank=True, null=True, on_delete=models.CASCADE)
-
-    def __str__(self):
-        return str(self.name)
-
-
 class Emission(models.Model):
-    item_category = models.ForeignKey(ItemCategory, on_delete=models.CASCADE)
     e_type = models.ForeignKey(EmissionType, on_delete=models.CASCADE)
-    lf_stage = models.ForeignKey(LifeCycleStage, on_delete=models.CASCADE)
     restriction = models.ForeignKey(Restriction, blank=True, null=True, on_delete=models.CASCADE)
+    reference = models.ForeignKey(Reference, blank=True, null=True, on_delete=models.SET_NULL)
     e_mean = models.FloatField("Emission Mean")
     e_var = models.FloatField("Emission Variance")
 
     def __str__(self):
-        return "Emission for " + str(self.item_category)
+        return f"{self.e_type} emission with restriction: {self.restriction}"
+
+
+# Connection between an item class and an emission
+# There might be multiple connections that all need to be added up for an item class
+class Connection(models.Model):
+    multiplier = models.FloatField("Emission Multiplier")
+    emission = models.ForeignKey(Emission, on_delete=models.CASCADE)
+    item_category = models.ForeignKey(ItemCategory, on_delete=models.CASCADE)
+    add_on = models.ForeignKey('self', blank=True, null=True, on_delete=models.CASCADE, related_name='previous')
+
+    def __str__(self):
+        return f"Connection for {self.item_category} and {self.emission}"
 
 
 """"
